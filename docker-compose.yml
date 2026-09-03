@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:18
+    container_name: db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: stalzonetoolsapi
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+  api:
+    build: .
+    container_name: api
+    env_file:
+      - .env
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:
