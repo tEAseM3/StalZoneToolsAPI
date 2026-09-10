@@ -5,7 +5,7 @@ from app.exceptions.user import UserAlreadyExistsError
 from app.models.role import Role
 from app.models.user_role import UserRole
 from app.schemas.user import UserCreate
-from app.services.user import create_user
+from app.services.user import create_user, get_user_by_id, get_user_by_username
 
 
 async def _create_user(db_session, username="user", password="password123"):
@@ -45,3 +45,39 @@ async def test_create_user_succeeds_when_default_role_is_missing(db_session):
 
     result = await db_session.execute(select(UserRole).where(UserRole.user_id == user.id))
     assert result.scalar_one_or_none() is None
+
+
+# get_user_by_username
+
+
+async def test_get_user_by_username_returns_existing_user(db_session):
+    created_user = await _create_user(db_session)
+
+    user = await get_user_by_username(db_session, created_user.username)
+
+    assert user is not None
+    assert user.id == created_user.id
+
+
+async def test_get_user_by_username_returns_none_when_user_is_missing(db_session):
+    user = await get_user_by_username(db_session, "unknown")
+
+    assert user is None
+
+
+# get_user_by_id
+
+
+async def test_get_user_by_id_returns_existing_user(db_session):
+    created_user = await _create_user(db_session)
+
+    user = await get_user_by_id(db_session, created_user.id)
+
+    assert user is not None
+    assert user.username == created_user.username
+
+
+async def test_get_user_by_id_returns_none_when_user_is_missing(db_session):
+    user = await get_user_by_id(db_session, 999)
+
+    assert user is None
