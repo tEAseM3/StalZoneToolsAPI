@@ -4,7 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import hash_password
 from app.exceptions.user import UserAlreadyExistsError
 from app.models.user import User
+from app.models.user_role import UserRole
 from app.schemas.user import UserCreate
+from app.services.role import get_role_by_name
+
+DEFAULT_ROLE_NAME = "user"
 
 
 async def get_user_by_username(db: AsyncSession, username: str) -> User | None:
@@ -22,6 +26,12 @@ async def create_user(db: AsyncSession, user_data: UserCreate) -> User:
         password_hash=hash_password(user_data.password),
     )
     db.add(user)
+    await db.flush()
+
+    default_role = await get_role_by_name(db, DEFAULT_ROLE_NAME)
+    if default_role is not None:
+        db.add(UserRole(user_id=user.id, role_id=default_role.id))
+
     await db.commit()
     await db.refresh(user)
     return user
