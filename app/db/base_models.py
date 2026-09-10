@@ -6,3 +6,6 @@ from app.models.user_role import UserRole  # noqa F401
 from app.models.permission import Permission  # noqa F401
 from app.models.role_permission import RolePermission  # noqa F401
 from app.models.refresh_token import RefreshToken  # noqa F401
+from app.models.item import Item  # noqa F401
+from app.models.item_attribute import ItemAttribute  # noqa F401
+from app.models.sync_state import SyncState  # noqa F401
