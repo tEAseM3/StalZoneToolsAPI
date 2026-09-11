@@ -39,8 +39,7 @@ def parse_item(raw_json: dict[str, Any]) -> ParsedItem:
     description: str | None = None
     attributes: list[ParsedItemAttribute] = []
 
-    info_blocks = raw_json.get("infoBlocks")
-    for block in info_blocks if isinstance(info_blocks, list) else []:
+    for block in raw_json.get("infoBlocks", []):
         if not isinstance(block, dict):
             continue
 
@@ -148,14 +147,15 @@ def _get_english_text(value: object) -> str | None:
     if not isinstance(lines, dict):
         return None
 
-    return _get_english_line(lines)
+    english_text = lines.get("en")
+    return english_text if isinstance(english_text, str) else None
 
 
-def _get_english_line(lines: object) -> str | None:
-    if not isinstance(lines, dict):
+def _get_english_line(value: object) -> str | None:
+    if not isinstance(value, dict):
         return None
 
-    english_text = lines.get("en")
+    english_text = value.get("en")
     return english_text if isinstance(english_text, str) else None
 
 
