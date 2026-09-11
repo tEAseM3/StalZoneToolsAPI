@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.core.security import oauth2_scheme
 from app.db.database import get_db
 from app.models.user import User
+from app.services.permission import user_has_permissions
 from app.services.user import get_user_by_id
 
 
@@ -34,3 +35,18 @@ async def get_current_user(
         raise credentials_exception
 
     return user
+
+
+def require_permissions(*required_permissions: str):
+    async def permission_dependency(
+        current_user: Annotated[User, Depends(get_current_user)],
+        db: Annotated[AsyncSession, Depends(get_db)],
+    ) -> User:
+        if not await user_has_permissions(db, current_user.id, set(required_permissions)):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions",
+            )
+        return current_user
+
+    return permission_dependency
