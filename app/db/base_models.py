@@ -9,3 +9,6 @@ from app.models.refresh_token import RefreshToken  # noqa F401
 from app.models.item import Item  # noqa F401
 from app.models.item_attribute import ItemAttribute  # noqa F401
 from app.models.sync_state import SyncState  # noqa F401
+from app.models.hideout_perk import HideoutPerk  # noqa F401
+from app.models.hideout_recipe import HideoutRecipe  # noqa F401
+from app.models.hideout_recipe_item import HideoutRecipeItem  # noqa F401
