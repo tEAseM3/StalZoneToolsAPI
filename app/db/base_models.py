@@ -12,3 +12,8 @@ from app.models.sync_state import SyncState  # noqa F401
 from app.models.hideout_perk import HideoutPerk  # noqa F401
 from app.models.hideout_recipe import HideoutRecipe  # noqa F401
 from app.models.hideout_recipe_item import HideoutRecipeItem  # noqa F401
+from app.models.auction_trade import AuctionTrade  # noqa F401
+from app.models.auction_current_price import AuctionCurrentPrice  # noqa F401
+from app.models.auction_price_candle import AuctionPriceCandle  # noqa F401
+from app.models.auction_refresh_queue import AuctionRefreshQueue  # noqa F401
+from app.models.craft_profit_snapshot import CraftProfitSnapshot  # noqa F401

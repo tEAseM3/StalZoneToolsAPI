@@ -18,6 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.craft_profit_snapshot import CraftProfitSnapshot
     from app.models.hideout_recipe_item import HideoutRecipeItem
 
 
@@ -41,6 +42,9 @@ class HideoutRecipe(Base):
     )
 
     components: Mapped[list[HideoutRecipeItem]] = relationship(
+        back_populates="recipe", cascade="all, delete-orphan"
+    )
+    profit_snapshots: Mapped[list[CraftProfitSnapshot]] = relationship(
         back_populates="recipe", cascade="all, delete-orphan"
     )
 
