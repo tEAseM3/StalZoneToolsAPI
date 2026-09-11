@@ -12,9 +12,7 @@ class AuctionRefreshQueue(Base):
     region: Mapped[str] = mapped_column(String(3), primary_key=True)
     item_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     priority: Mapped[int] = mapped_column(Integer, nullable=False)
-    next_lots_refresh_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    next_lots_refresh_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     next_history_refresh_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
