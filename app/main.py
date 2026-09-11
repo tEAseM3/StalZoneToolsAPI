@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 import app.db.base_models  # noqa: F401
 from app.core.config import settings
 from app.exceptions.base import ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
-from app.routers import auth, user
+from app.routers import auth, market, user
 from app.services.auction_runner import (
     AuctionSyncRunner,
     run_auction_scheduler,
@@ -46,6 +46,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.include_router(auth.router)
 app.include_router(user.router)
+app.include_router(market.router)
 
 
 @app.exception_handler(NotFoundError)
