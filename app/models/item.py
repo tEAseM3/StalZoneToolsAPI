@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, DateTime, String, Text, func
+from sqlalchemy import CheckConstraint, DateTime, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -16,7 +16,7 @@ class Item(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     source_path: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
-    category: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    category: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     color: Mapped[str | None] = mapped_column(String(55), nullable=True)
@@ -37,4 +37,6 @@ class Item(Base):
         CheckConstraint("length(trim(category)) > 0", name="check_item_category_length"),
         CheckConstraint("length(trim(name)) > 0", name="check_item_name_length"),
         CheckConstraint("length(trim(source_sha)) > 0", name="check_item_source_sha_length"),
+        Index("idx_items_category", "category"),
+        Index("idx_items_raw_gin", "raw", postgresql_using="gin"),
     )

@@ -5,6 +5,7 @@ from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
     Identity,
+    Index,
     Integer,
     Numeric,
     String,
@@ -25,7 +26,7 @@ class ItemAttribute(Base):
     item_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("items.id", ondelete="CASCADE"), nullable=False
     )
-    key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    key: Mapped[str] = mapped_column(String(255), nullable=False)
     label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     value_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     value_numeric: Mapped[float | None] = mapped_column(Numeric, nullable=True)
@@ -41,4 +42,6 @@ class ItemAttribute(Base):
             "value_text IS NOT NULL OR value_numeric IS NOT NULL",
             name="check_item_attribute_has_value",
         ),
+        Index("idx_item_attributes_item", "item_id"),
+        Index("idx_item_attributes_key", "key"),
     )
