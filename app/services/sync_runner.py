@@ -116,7 +116,7 @@ async def get_last_sync_status(db: AsyncSession) -> SyncRunStatus | None:
     try:
         payload = json.loads(state.value)
         return SyncRunStatus(**payload)
-    except (TypeError, json.JSONDecodeError):
+    except TypeError, json.JSONDecodeError:
         logger.warning("Stored GitHub sync status has an invalid format")
         return None
 

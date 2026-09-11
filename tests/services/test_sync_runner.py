@@ -89,6 +89,7 @@ async def test_scheduler_runs_immediately_then_waits_for_next_interval():
             return GitHubSyncResult(SourceSyncResult(), SourceSyncResult())
 
     runner = FakeRunner()
+
     async def sleep(_: float) -> None:
         await asyncio.Event().wait()
 
