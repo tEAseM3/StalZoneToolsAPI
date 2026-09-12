@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     SECRET_KEY: str = Field(min_length=32)
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, gt=0)
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=1440, gt=0)
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=30, gt=0)
     GITHUB_TOKEN: str | None = None
     GITHUB_REPOSITORY: str = "EXBO-Studio/stalzone-database"

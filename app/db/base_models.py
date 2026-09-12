@@ -17,3 +17,5 @@ from app.models.auction_current_price import AuctionCurrentPrice  # noqa F401
 from app.models.auction_price_candle import AuctionPriceCandle  # noqa F401
 from app.models.auction_refresh_queue import AuctionRefreshQueue  # noqa F401
 from app.models.craft_profit_snapshot import CraftProfitSnapshot  # noqa F401
+from app.models.user_trade_position import UserTradePosition  # noqa F401
+from app.models.user_trade_sale import UserTradeSale  # noqa F401

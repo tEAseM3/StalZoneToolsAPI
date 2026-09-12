@@ -9,6 +9,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.refresh_token import RefreshToken
     from app.models.user_role import UserRole
+    from app.models.user_trade_position import UserTradePosition
 
 
 class User(Base):
@@ -27,6 +28,9 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan"
     )
     refresh_tokens: Mapped[list[RefreshToken]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    trade_positions: Mapped[list[UserTradePosition]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
 

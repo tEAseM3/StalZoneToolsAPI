@@ -1,9 +1,9 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from app.models.auction_current_price import AuctionCurrentPrice
 from app.models.auction_price_candle import AuctionPriceCandle
@@ -14,6 +14,102 @@ from app.models.item import Item
 from app.services.auction_sync import ENERGY_ITEM_ID, ENERGY_PER_ITEM
 
 PAGE_SIZE = 20
+
+
+async def top_buy_items(db: AsyncSession, region: str, page: int) -> dict:
+    latest_day_bucket = (
+        select(
+            AuctionPriceCandle.item_id,
+            func.max(AuctionPriceCandle.bucket_start).label("bucket_start"),
+        )
+        .where(AuctionPriceCandle.region == region, AuctionPriceCandle.interval == "day")
+        .group_by(AuctionPriceCandle.item_id)
+        .subquery()
+    )
+    latest_week_bucket = (
+        select(
+            AuctionPriceCandle.item_id,
+            func.max(AuctionPriceCandle.bucket_start).label("bucket_start"),
+        )
+        .where(AuctionPriceCandle.region == region, AuctionPriceCandle.interval == "week")
+        .group_by(AuctionPriceCandle.item_id)
+        .subquery()
+    )
+    daily = aliased(AuctionPriceCandle)
+    weekly = aliased(AuctionPriceCandle)
+    rows = (
+        await db.execute(
+            select(Item, AuctionCurrentPrice, daily, weekly)
+            .join(
+                AuctionCurrentPrice,
+                (AuctionCurrentPrice.item_id == Item.id) & (AuctionCurrentPrice.region == region),
+            )
+            .join(
+                latest_day_bucket,
+                latest_day_bucket.c.item_id == Item.id,
+            )
+            .join(
+                daily,
+                (daily.item_id == Item.id)
+                & (daily.region == region)
+                & (daily.interval == "day")
+                & (daily.bucket_start == latest_day_bucket.c.bucket_start),
+            )
+            .join(
+                latest_week_bucket,
+                latest_week_bucket.c.item_id == Item.id,
+            )
+            .join(
+                weekly,
+                (weekly.item_id == Item.id)
+                & (weekly.region == region)
+                & (weekly.interval == "week")
+                & (weekly.bucket_start == latest_week_bucket.c.bucket_start),
+            )
+            .where(
+                AuctionCurrentPrice.best_buyout_unit_price.is_not(None),
+                daily.volume >= 5,
+                weekly.volume >= 20,
+                weekly.median_unit_price > 0,
+            )
+        )
+    ).all()
+    candidates = []
+    for item, current, latest_day, latest_week in rows:
+        buyout_price = current.best_buyout_unit_price
+        discount_percent = (
+            (latest_week.median_unit_price - buyout_price) / latest_week.median_unit_price * 100
+        )
+        if discount_percent <= 0:
+            continue
+        liquidity_factor = min(Decimal(latest_day.volume) / Decimal(10), Decimal(10))
+        candidates.append(
+            {
+                "id": item.id,
+                "name": item.name,
+                "category": item.category,
+                "current_buyout_unit_price": buyout_price,
+                "weekly_median_unit_price": latest_week.median_unit_price,
+                "daily_median_unit_price": latest_day.median_unit_price,
+                "daily_trade_volume": latest_day.volume,
+                "weekly_trade_volume": latest_week.volume,
+                "discount_percent": discount_percent,
+                "buy_score": discount_percent * liquidity_factor,
+                "trend": "below_weekly_median",
+                "observed_at": current.observed_at,
+            }
+        )
+    candidates.sort(key=lambda candidate: candidate["buy_score"], reverse=True)
+    offset = (page - 1) * PAGE_SIZE
+    return {
+        "page": page,
+        "criteria": {
+            "minimum_daily_trade_volume": 5,
+            "minimum_weekly_trade_volume": 20,
+            "strategy": "current buyout below the latest weekly median",
+        },
+        "items": candidates[offset : offset + PAGE_SIZE],
+    }
 
 
 async def search_items(db: AsyncSession, region: str, name: str, page: int) -> dict:
