@@ -159,3 +159,12 @@ async def test_craft_search_returns_ingredient_prices_and_profit(client, db_sess
     assert craft["results"][0]["name"] == "Tea"
     assert craft["ingredients"][0]["unit_price"] == 50.0
     assert craft["profit"]["profit"] == 100.0
+
+    reprocess = await client.get(
+        "/hideout/crafts/reprocess?item_id=herbs&region=RU", headers=headers
+    )
+
+    assert reprocess.status_code == 200
+    option = reprocess.json()["crafts"][0]
+    assert option["selected_ingredient"]["sell_as_is_value"] == 100.0
+    assert option["recommendation"] == "reprocess"

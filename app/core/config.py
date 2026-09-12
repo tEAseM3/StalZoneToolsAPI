@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     SYNC_INTERVAL_HOURS: int = Field(default=24, gt=0)
     SYNC_DOWNLOAD_CONCURRENCY: int = Field(default=10, gt=0, le=50)
     STALZONE_API_BASE_URL: str = "https://eapi.stalcraft.net"
-    AUCTION_REGIONS: str = "RU"
+    AUCTION_REGIONS: str = "EU"
     AUCTION_REQUESTS_PER_MINUTE: int = Field(default=180, gt=0, le=200)
     AUCTION_LOTS_REFRESH_MINUTES: int = Field(default=10, gt=0)
     AUCTION_HISTORY_REFRESH_HOURS: int = Field(default=6, gt=0)

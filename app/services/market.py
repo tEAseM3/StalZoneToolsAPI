@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -38,6 +39,7 @@ async def item_market(db: AsyncSession, region: str, item: Item) -> dict:
         )
         .order_by(AuctionPriceCandle.bucket_start.desc())
     )
+    trend = await _price_trend(db, region, item.id, recent)
     return {
         "id": item.id,
         "name": item.name,
@@ -51,6 +53,7 @@ async def item_market(db: AsyncSession, region: str, item: Item) -> dict:
         "min_unit_price": recent.min_unit_price if recent else None,
         "max_unit_price": recent.max_unit_price if recent else None,
         "trade_volume": recent.volume if recent else None,
+        "trend": trend,
     }
 
 
@@ -185,7 +188,77 @@ async def reprocess_options(db: AsyncSession, region: str, item_id: str) -> list
         .unique()
         .all()
     )
-    return [await craft_market(db, region, recipe) for recipe in recipes]
+    price = (await _prices_by_item_id(db, region, {item_id})).get(item_id)
+    options = []
+    for recipe in recipes:
+        craft = await craft_market(db, region, recipe)
+        input_amount = sum(
+            Decimal(component.amount)
+            for component in recipe.components
+            if component.component_type == "ingredient" and component.item_id == item_id
+        )
+        raw_value = input_amount * price if price is not None else None
+        profit = craft["profit"]
+        options.append(
+            {
+                **craft,
+                "selected_ingredient": {
+                    "item_id": item_id,
+                    "amount": input_amount,
+                    "sell_as_is_value": raw_value,
+                },
+                "recommendation": _reprocess_recommendation(profit),
+            }
+        )
+    return options
+
+
+async def _price_trend(
+    db: AsyncSession,
+    region: str,
+    item_id: str,
+    recent: AuctionPriceCandle | None,
+) -> dict | None:
+    if recent is None:
+        return None
+    since = datetime.now(UTC) - timedelta(days=30)
+    candles = (
+        await db.scalars(
+            select(AuctionPriceCandle)
+            .where(
+                AuctionPriceCandle.region == region,
+                AuctionPriceCandle.item_id == item_id,
+                AuctionPriceCandle.interval == "day",
+                AuctionPriceCandle.bucket_start >= since,
+            )
+            .order_by(AuctionPriceCandle.bucket_start.desc())
+        )
+    ).all()
+    if len(candles) < 2:
+        return {
+            "status": "insufficient_data",
+            "median_24h": recent.median_unit_price,
+            "median_30d": None,
+            "change_percent": None,
+        }
+    historical = sum((candle.median_unit_price for candle in candles), Decimal(0)) / len(candles)
+    change_percent = (
+        (recent.median_unit_price - historical) / historical * 100 if historical else None
+    )
+    if change_percent is None:
+        status = "insufficient_data"
+    elif change_percent > 5:
+        status = "above_usual"
+    elif change_percent < -5:
+        status = "below_usual"
+    else:
+        status = "normal"
+    return {
+        "status": status,
+        "median_24h": recent.median_unit_price,
+        "median_30d": historical,
+        "change_percent": change_percent,
+    }
 
 
 async def _items_by_id(db: AsyncSession, item_ids: set[str]) -> dict[str, Item]:
@@ -254,6 +327,12 @@ def _snapshot(snapshot: CraftProfitSnapshot | None) -> dict | None:
         "has_complete_prices": snapshot.has_complete_prices,
         "calculated_at": snapshot.calculated_at,
     }
+
+
+def _reprocess_recommendation(profit: dict | None) -> str:
+    if profit is None or not profit["has_complete_prices"]:
+        return "insufficient_price_data"
+    return "reprocess" if profit["profit"] > 0 else "sell_as_is"
 
 
 def _chain_node(component, prices, producers, energy_unit_price, visited: set[str]) -> dict:

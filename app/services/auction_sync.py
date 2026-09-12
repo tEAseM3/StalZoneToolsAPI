@@ -182,24 +182,36 @@ class AuctionSyncService:
     async def _store_trades(
         self, region: str, item_id: str, trades: list[AuctionTradeRecord], now: datetime
     ) -> None:
-        for trade in trades:
-            fingerprint = _trade_fingerprint(region, item_id, trade)
-            trade_exists = await self.db.scalar(
-                select(AuctionTrade.id).where(AuctionTrade.source_fingerprint == fingerprint)
-            )
-            if trade_exists is None:
-                self.db.add(
-                    AuctionTrade(
-                        region=region,
-                        item_id=item_id,
-                        amount=trade.amount,
-                        lot_price=trade.lot_price,
-                        unit_price=per_unit_price(trade.lot_price, trade.amount),
-                        sold_at=trade.sold_at,
-                        source_fingerprint=fingerprint,
-                        created_at=now,
+        trades_by_fingerprint = {
+            _trade_fingerprint(region, item_id, trade): trade for trade in trades
+        }
+        if not trades_by_fingerprint:
+            return
+
+        existing_fingerprints = set(
+            (
+                await self.db.scalars(
+                    select(AuctionTrade.source_fingerprint).where(
+                        AuctionTrade.source_fingerprint.in_(trades_by_fingerprint)
                     )
                 )
+            ).all()
+        )
+        for fingerprint, trade in trades_by_fingerprint.items():
+            if fingerprint in existing_fingerprints:
+                continue
+            self.db.add(
+                AuctionTrade(
+                    region=region,
+                    item_id=item_id,
+                    amount=trade.amount,
+                    lot_price=trade.lot_price,
+                    unit_price=per_unit_price(trade.lot_price, trade.amount),
+                    sold_at=trade.sold_at,
+                    source_fingerprint=fingerprint,
+                    created_at=now,
+                )
+            )
         await self.db.flush()
 
     async def _rebuild_candles(self, region: str, item_id: str) -> None:

@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from app.models.auction_current_price import AuctionCurrentPrice
 from app.models.auction_refresh_queue import AuctionRefreshQueue
+from app.models.auction_trade import AuctionTrade
 from app.models.craft_profit_snapshot import CraftProfitSnapshot
 from app.models.hideout_recipe import HideoutRecipe
 from app.models.hideout_recipe_item import HideoutRecipeItem
@@ -78,3 +79,20 @@ async def test_auction_sync_updates_recipe_candidates_prices_and_profit(db_sessi
     assert profit.energy_cost == Decimal("10")
     assert profit.profit == Decimal("90")
     assert queue is not None
+
+
+async def test_auction_sync_deduplicates_history_trades(db_session):
+    service = AuctionSyncService(
+        db_session, FakeAuctionClient(), lots_refresh_minutes=10, history_refresh_hours=6
+    )
+    trade = AuctionTradeRecord(
+        amount=2,
+        lot_price=100,
+        sold_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    await service._store_trades("RU", "ingredient", [trade, trade], datetime.now(UTC))
+    await db_session.commit()
+
+    stored_trades = (await db_session.scalars(select(AuctionTrade))).all()
+    assert len(stored_trades) == 1
