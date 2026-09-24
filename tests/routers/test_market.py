@@ -45,7 +45,7 @@ async def test_market_item_search_returns_price_with_item_name(client, db_sessio
     )
     db_session.add(
         AuctionCurrentPrice(
-            region="RU",
+            region="EU",
             item_id="tea",
             best_buyout_unit_price=Decimal("120"),
             best_bid_unit_price=Decimal("100"),
@@ -56,7 +56,7 @@ async def test_market_item_search_returns_price_with_item_name(client, db_sessio
     await db_session.commit()
     headers = await _authorized_headers(db_session, ["items:read", "auction:read"])
 
-    response = await client.get("/market/items?name=tea&region=RU", headers=headers)
+    response = await client.get("/market/items?name=tea", headers=headers)
 
     assert response.status_code == 200
     assert response.json()["items"][0]["name"] == "Tea"
@@ -68,7 +68,7 @@ async def test_market_item_search_requires_both_catalogue_and_auction_permission
 ):
     headers = await _authorized_headers(db_session, ["items:read"])
 
-    response = await client.get("/market/items?name=tea&region=RU", headers=headers)
+    response = await client.get("/market/items?name=tea", headers=headers)
 
     assert response.status_code == 403
 
@@ -118,7 +118,7 @@ async def test_craft_search_returns_ingredient_prices_and_profit(client, db_sess
     db_session.add_all(
         [
             AuctionCurrentPrice(
-                region="RU",
+                region="EU",
                 item_id="tea",
                 best_buyout_unit_price=Decimal("200"),
                 best_bid_unit_price=None,
@@ -126,7 +126,7 @@ async def test_craft_search_returns_ingredient_prices_and_profit(client, db_sess
                 observed_at=datetime.now(UTC),
             ),
             AuctionCurrentPrice(
-                region="RU",
+                region="EU",
                 item_id="herbs",
                 best_buyout_unit_price=Decimal("50"),
                 best_bid_unit_price=None,
@@ -135,7 +135,7 @@ async def test_craft_search_returns_ingredient_prices_and_profit(client, db_sess
             ),
             CraftProfitSnapshot(
                 recipe_id=recipe.id,
-                region="RU",
+                region="EU",
                 result_value=Decimal("200"),
                 ingredients_cost=Decimal("100"),
                 energy_required=0,
@@ -152,19 +152,10 @@ async def test_craft_search_returns_ingredient_prices_and_profit(client, db_sess
     await db_session.commit()
     headers = await _authorized_headers(db_session, ["hideout:read", "auction:read"])
 
-    response = await client.get("/hideout/crafts?name=tea&region=RU", headers=headers)
+    response = await client.get("/hideout/crafts?name=tea", headers=headers)
 
     assert response.status_code == 200
     craft = response.json()["crafts"][0]
     assert craft["results"][0]["name"] == "Tea"
     assert craft["ingredients"][0]["unit_price"] == 50.0
     assert craft["profit"]["profit"] == 100.0
-
-    reprocess = await client.get(
-        "/hideout/crafts/reprocess?item_id=herbs&region=RU", headers=headers
-    )
-
-    assert reprocess.status_code == 200
-    option = reprocess.json()["crafts"][0]
-    assert option["selected_ingredient"]["sell_as_is_value"] == 100.0
-    assert option["recommendation"] == "reprocess"

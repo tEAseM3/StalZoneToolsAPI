@@ -13,6 +13,10 @@ from app.core.auth import get_access_token
 class AuctionApiError(RuntimeError):
     """Raised when the official auction API cannot provide a valid response."""
 
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+
 
 class AuctionRateLimiter:
     def __init__(self, requests_per_minute: int):
@@ -101,7 +105,9 @@ class AuctionClient:
             response.raise_for_status()
             payload = response.json()
         except (httpx.HTTPError, ValueError) as exc:
-            raise AuctionApiError(f"Unable to get auction {resource} for '{item_id}'") from exc
+            raise AuctionApiError(
+                f"Unable to get auction {resource} for '{item_id}'", response.status_code
+            ) from exc
         if not isinstance(payload, dict):
             raise AuctionApiError("Auction API returned a non-object JSON payload")
         return payload

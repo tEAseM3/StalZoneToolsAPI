@@ -37,8 +37,11 @@ class AuctionSyncRunner:
                     service = AuctionSyncService(
                         db,
                         client,
-                        lots_refresh_minutes=self._settings.AUCTION_LOTS_REFRESH_MINUTES,
-                        history_refresh_hours=self._settings.AUCTION_HISTORY_REFRESH_HOURS,
+                        craft_lots_refresh_minutes=self._settings.CRAFT_LOTS_REFRESH_MINUTES,
+                        craft_history_refresh_hours=self._settings.CRAFT_HISTORY_REFRESH_HOURS,
+                        market_lots_refresh_minutes=self._settings.MARKET_LOTS_REFRESH_MINUTES,
+                        market_history_refresh_hours=self._settings.MARKET_HISTORY_REFRESH_HOURS,
+                        empty_probe_limit=self._settings.AUCTION_EMPTY_PROBE_LIMIT,
                     )
                     await service.ensure_recipe_candidates(regions)
                     return sum(

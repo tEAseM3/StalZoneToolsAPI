@@ -58,7 +58,13 @@ async def test_auction_sync_updates_recipe_candidates_prices_and_profit(db_sessi
     await db_session.commit()
 
     service = AuctionSyncService(
-        db_session, FakeAuctionClient(), lots_refresh_minutes=10, history_refresh_hours=6
+        db_session,
+        FakeAuctionClient(),
+        craft_lots_refresh_minutes=30,
+        craft_history_refresh_hours=12,
+        market_lots_refresh_minutes=120,
+        market_history_refresh_hours=24,
+        empty_probe_limit=5,
     )
     assert await service.ensure_recipe_candidates(["RU"]) == 3
 
@@ -77,13 +83,19 @@ async def test_auction_sync_updates_recipe_candidates_prices_and_profit(db_sessi
     assert profit is not None
     assert profit.ingredients_cost == Decimal("100")
     assert profit.energy_cost == Decimal("10")
-    assert profit.profit == Decimal("90")
+    assert profit.profit == Decimal("80")
     assert queue is not None
 
 
 async def test_auction_sync_deduplicates_history_trades(db_session):
     service = AuctionSyncService(
-        db_session, FakeAuctionClient(), lots_refresh_minutes=10, history_refresh_hours=6
+        db_session,
+        FakeAuctionClient(),
+        craft_lots_refresh_minutes=30,
+        craft_history_refresh_hours=12,
+        market_lots_refresh_minutes=120,
+        market_history_refresh_hours=24,
+        empty_probe_limit=5,
     )
     trade = AuctionTradeRecord(
         amount=2,
@@ -96,3 +108,56 @@ async def test_auction_sync_deduplicates_history_trades(db_session):
 
     stored_trades = (await db_session.scalars(select(AuctionTrade))).all()
     assert len(stored_trades) == 1
+
+
+async def test_auction_sync_keeps_last_price_when_lots_response_is_empty(db_session):
+    service = AuctionSyncService(
+        db_session,
+        FakeAuctionClient(),
+        craft_lots_refresh_minutes=30,
+        craft_history_refresh_hours=12,
+        market_lots_refresh_minutes=120,
+        market_history_refresh_hours=24,
+        empty_probe_limit=5,
+    )
+    observed_at = datetime(2026, 1, 1, tzinfo=UTC)
+
+    assert await service._store_lots(
+        "EU", "ingredient", [AuctionLot(amount=1, current_price=90, buyout_price=100)], observed_at
+    )
+    await db_session.commit()
+
+    assert not await service._store_lots("EU", "ingredient", [], datetime.now(UTC))
+    await db_session.commit()
+    current = await db_session.get(AuctionCurrentPrice, {"region": "EU", "item_id": "ingredient"})
+
+    assert current is not None
+    assert current.best_buyout_unit_price == Decimal("100")
+    assert current.observed_at == observed_at
+
+
+def test_auction_sync_retires_item_after_empty_probe_limit():
+    queue_item = AuctionRefreshQueue(
+        region="EU",
+        item_id="untradeable",
+        priority=10,
+        next_lots_refresh_at=datetime.now(UTC),
+        next_history_refresh_at=datetime.now(UTC),
+        market_state="probing",
+        empty_probe_count=4,
+        last_lots_was_empty=True,
+    )
+    service = AuctionSyncService(
+        None,
+        FakeAuctionClient(),
+        craft_lots_refresh_minutes=30,
+        craft_history_refresh_hours=12,
+        market_lots_refresh_minutes=120,
+        market_history_refresh_hours=24,
+        empty_probe_limit=5,
+    )
+
+    service._update_market_state(queue_item, has_history=False, now=datetime.now(UTC))
+
+    assert queue_item.market_state == "retired"
+    assert queue_item.retired_reason == "no_market_activity"

@@ -1,0 +1,66 @@
+"""Remove discontinued trading tables.
+
+Revision ID: b9c1d2e3f4a5
+Revises: 7f8f5b2f774d
+Create Date: 2026-09-24 12:00:00.000000
+
+"""
+
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+
+from alembic import op
+
+revision: str = "b9c1d2e3f4a5"
+down_revision: str | Sequence[str] | None = "7f8f5b2f774d"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    op.drop_index("idx_user_trade_sales_position", table_name="user_trade_sales")
+    op.drop_table("user_trade_sales")
+    op.drop_index("idx_user_trade_positions_user_region", table_name="user_trade_positions")
+    op.drop_table("user_trade_positions")
+
+
+def downgrade() -> None:
+    op.create_table(
+        "user_trade_positions",
+        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), nullable=False),
+        sa.Column("user_id", sa.BigInteger(), nullable=False),
+        sa.Column("item_id", sa.String(length=64), nullable=False),
+        sa.Column("item_name", sa.String(length=255), nullable=False),
+        sa.Column("region", sa.String(length=3), nullable=False),
+        sa.Column("purchased_quantity", sa.Integer(), nullable=False),
+        sa.Column("purchase_total", sa.BigInteger(), nullable=False),
+        sa.Column("purchased_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("region IN ('RU', 'EU', 'NA', 'SEA', 'NEA')", name="check_user_trade_position_region"),
+        sa.CheckConstraint("length(trim(item_id)) > 0", name="check_user_trade_position_item_id_length"),
+        sa.CheckConstraint("length(trim(item_name)) > 0", name="check_user_trade_position_item_name_length"),
+        sa.CheckConstraint("purchase_total >= 0", name="check_user_trade_position_purchase_total"),
+        sa.CheckConstraint("purchased_quantity > 0", name="check_user_trade_position_quantity"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(
+        "idx_user_trade_positions_user_region",
+        "user_trade_positions",
+        ["user_id", "region"],
+        unique=False,
+    )
+    op.create_table(
+        "user_trade_sales",
+        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), nullable=False),
+        sa.Column("position_id", sa.BigInteger(), nullable=False),
+        sa.Column("quantity", sa.Integer(), nullable=False),
+        sa.Column("revenue_total", sa.BigInteger(), nullable=False),
+        sa.Column("sold_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("quantity > 0", name="check_user_trade_sale_quantity"),
+        sa.CheckConstraint("revenue_total >= 0", name="check_user_trade_sale_revenue_total"),
+        sa.ForeignKeyConstraint(["position_id"], ["user_trade_positions.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("idx_user_trade_sales_position", "user_trade_sales", ["position_id"], unique=False)

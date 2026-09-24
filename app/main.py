@@ -1,23 +1,41 @@
 import asyncio
+import json
+import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 import app.db.base_models  # noqa: F401
 from app.core.config import settings
+from app.db.database import SessionLocal
 from app.exceptions.base import ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
-from app.routers import auth, market, trading, user
+from app.routers import auth, market, user
 from app.services.auction_runner import (
     AuctionSyncRunner,
     run_auction_scheduler,
     stop_auction_scheduler,
 )
 from app.services.sync_runner import GitHubSyncRunner, run_sync_scheduler, stop_scheduler
+from app.services.test_seed import ensure_test_admin
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if settings.TEST_AUTO_LOGIN:
+        async with SessionLocal() as db:
+            user = await ensure_test_admin(
+                db, settings.TEST_ADMIN_USERNAME, settings.TEST_ADMIN_PASSWORD
+            )
+        logging.getLogger(__name__).warning("Test admin '%s' is enabled", user.username)
+
     runner = GitHubSyncRunner()
     scheduler_task = asyncio.create_task(
         run_sync_scheduler(
@@ -47,7 +65,32 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(auth.router)
 app.include_router(user.router)
 app.include_router(market.router)
-app.include_router(trading.router)
+
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+@app.get("/", include_in_schema=False)
+async def frontend() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/app-config.js", include_in_schema=False)
+async def frontend_config() -> Response:
+    config = {"testAutoLogin": settings.TEST_AUTO_LOGIN}
+    if settings.TEST_AUTO_LOGIN:
+        config.update(
+            {
+                "testAdminUsername": settings.TEST_ADMIN_USERNAME,
+                "testAdminPassword": settings.TEST_ADMIN_PASSWORD,
+            }
+        )
+    return Response(
+        content=f"window.APP_CONFIG = {json.dumps(config)};",
+        media_type="application/javascript",
+    )
+
+
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.exception_handler(NotFoundError)

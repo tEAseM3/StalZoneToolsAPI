@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stalzone Tools — EU market</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header>
+    <h1>Stalzone Tools — EU</h1>
+    <form id="login-form">
+      <label>Логин <input id="username" required autocomplete="username"></label>
+      <label>Пароль <input id="password" type="password" required autocomplete="current-password"></label>
+      <button type="submit">Войти</button>
+      <button id="logout" type="button" hidden>Выйти</button>
+    </form>
+    <p id="auth-status">Войдите, чтобы получить данные рынка.</p>
+  </header>
+
+  <main>
+    <nav aria-label="Разделы рынка">
+      <button class="tab active" data-view="items">Найти предметы</button>
+      <button class="tab" data-view="top-items">Топ покупок</button>
+      <button class="tab" data-view="profitable-items">Выгодно купить</button>
+      <button class="tab" data-view="crafts">Найти крафты</button>
+      <button class="tab" data-view="top-crafts">Топ крафтов</button>
+      <button class="tab" data-view="records">Мои крафты</button>
+    </nav>
+
+    <section id="items" class="view active">
+      <h2>Поиск предметов</h2>
+      <form class="search-form" data-endpoint="/market/items" data-target="items-result">
+        <label>Название <input name="name" minlength="1" required placeholder="Например, АКМ"></label>
+        <button type="submit">Найти</button>
+      </form>
+      <div id="items-result" class="result"></div>
+    </section>
+
+    <section id="top-items" class="view">
+      <h2>Топ предметов для покупки</h2>
+      <p>Рейтинг: текущая цена выкупа ниже недельной медианы; учитывается ликвидность.</p>
+      <div class="sort-controls" data-target="top-items-result" data-endpoint="/market/items/top">
+        <span>Сортировать:</span>
+        <button type="button" data-sort="score">Оценка</button>
+        <button type="button" data-sort="price">Цена</button>
+        <button type="button" data-sort="discount">Скидка</button>
+        <button type="button" data-sort="volume">Объём</button>
+      </div>
+      <div id="top-items-result" class="result"></div>
+    </section>
+
+    <section id="profitable-items" class="view">
+      <h2>Выгодно купить сейчас</h2>
+      <p>Сравнение текущего buyout с медианой реальных сделок за последние сутки. Из цены продажи уже вычтена комиссия аукциона 5%. Лоты EXBO могут отображаться с задержкой около 10 минут.</p>
+      <div class="sort-controls" data-target="profitable-items-result" data-endpoint="/market/items/profitable">
+        <span>Сортировать:</span>
+        <button type="button" data-sort="profit">Прибыль</button>
+        <button type="button" data-sort="margin">Маржа</button>
+        <button type="button" data-sort="price">Цена покупки</button>
+        <button type="button" data-sort="volume">Объём</button>
+      </div>
+      <div id="profitable-items-result" class="result"></div>
+    </section>
+
+    <section id="crafts" class="view">
+      <h2>Поиск крафтов</h2>
+      <form class="search-form" data-endpoint="/hideout/crafts" data-target="crafts-result">
+        <label>Название результата <input name="name" minlength="1" required placeholder="Например, аптечка"></label>
+        <button type="submit">Найти</button>
+      </form>
+      <div id="crafts-result" class="result"></div>
+    </section>
+
+    <section id="top-crafts" class="view">
+      <h2>Топ крафтов</h2>
+      <p>Только рецепты, для которых есть полные цены ингредиентов, результата и энергии.</p>
+      <div class="sort-controls" data-target="top-crafts-result" data-endpoint="/hideout/crafts/top">
+        <span>Сортировать:</span>
+        <button type="button" data-sort="profit">Прибыль</button>
+        <button type="button" data-sort="margin">Маржа</button>
+        <button type="button" data-sort="cost">Стоимость</button>
+        <button type="button" data-sort="price">Цена результата</button>
+      </div>
+      <div id="top-crafts-result" class="result"></div>
+    </section>
+
+    <section id="records" class="view">
+      <h2>Мои крафты и продажи</h2>
+      <p>Базовая цена фиксируется на момент записи по текущей цене предмета EU. Комиссия аукциона 5% вычитается из выручки продаж.</p>
+      <form id="craft-record-form">
+        <label>Предмет <input id="record-item-name" name="item_name" list="record-suggestions" required></label>
+        <datalist id="record-suggestions"></datalist>
+        <label>Скрафчено, шт. <input name="quantity" type="number" min="1" required></label>
+        <button type="submit">Записать крафт</button>
+      </form>
+      <form id="craft-sale-form">
+        <label>Запись <select id="sale-record-id" name="record_id" required></select></label>
+        <label>Продано, шт. <input name="quantity" type="number" min="1" required></label>
+        <label>Цена продажи за шт. <input name="unit_price" type="number" min="0" step="0.0001" required></label>
+        <button type="submit">Записать продажу</button>
+      </form>
+      <button id="load-records" type="button">Обновить список</button>
+      <div id="records-result" class="result"></div>
+    </section>
+  </main>
+
+  <template id="more-template"><button class="more" type="button">Ещё</button></template>
+  <script src="/app-config.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -15,7 +15,9 @@ from app.models.auction_trade import AuctionTrade
 from app.models.craft_profit_snapshot import CraftProfitSnapshot
 from app.models.hideout_recipe import HideoutRecipe
 from app.models.hideout_recipe_item import HideoutRecipeItem
+from app.models.item import Item
 from app.services.auction_client import (
+    AuctionApiError,
     AuctionClient,
     AuctionLot,
     AuctionTradeRecord,
@@ -24,6 +26,9 @@ from app.services.auction_client import (
 
 ENERGY_ITEM_ID = "401j"
 ENERGY_PER_ITEM = Decimal("5000")
+AUCTION_SELL_COMMISSION = Decimal("0.05")
+CRAFT_PRIORITY = 50
+MARKET_PRIORITY = 10
 
 
 class AuctionSyncService:
@@ -31,13 +36,19 @@ class AuctionSyncService:
         self,
         db: AsyncSession,
         client: AuctionClient,
-        lots_refresh_minutes: int,
-        history_refresh_hours: int,
+        craft_lots_refresh_minutes: int,
+        craft_history_refresh_hours: int,
+        market_lots_refresh_minutes: int,
+        market_history_refresh_hours: int,
+        empty_probe_limit: int,
     ):
         self.db = db
         self.client = client
-        self.lots_refresh = timedelta(minutes=lots_refresh_minutes)
-        self.history_refresh = timedelta(hours=history_refresh_hours)
+        self.craft_lots_refresh = timedelta(minutes=craft_lots_refresh_minutes)
+        self.craft_history_refresh = timedelta(hours=craft_history_refresh_hours)
+        self.market_lots_refresh = timedelta(minutes=market_lots_refresh_minutes)
+        self.market_history_refresh = timedelta(hours=market_history_refresh_hours)
+        self.empty_probe_limit = empty_probe_limit
 
     async def ensure_recipe_candidates(self, regions: list[str]) -> int:
         rows = (
@@ -45,18 +56,27 @@ class AuctionSyncService:
                 select(HideoutRecipeItem.item_id, HideoutRecipeItem.component_type)
             )
         ).all()
-        priorities: dict[str, int] = {ENERGY_ITEM_ID: 200}
+        priorities: dict[str, int] = {
+            item_id: MARKET_PRIORITY for item_id in (await self.db.scalars(select(Item.id))).all()
+        }
+        priorities[ENERGY_ITEM_ID] = 200
         for item_id, component_type in rows:
-            priority = 100 if component_type == "result" else 50
+            priority = 100 if component_type == "result" else CRAFT_PRIORITY
             priorities[item_id] = max(priorities.get(item_id, 0), priority)
 
         now = _now()
         created = 0
         for region in regions:
+            existing_queue_items = {
+                queue_item.item_id: queue_item
+                for queue_item in (
+                    await self.db.scalars(
+                        select(AuctionRefreshQueue).where(AuctionRefreshQueue.region == region)
+                    )
+                ).all()
+            }
             for item_id, priority in priorities.items():
-                queue_item = await self.db.get(
-                    AuctionRefreshQueue, {"region": region, "item_id": item_id}
-                )
+                queue_item = existing_queue_items.get(item_id)
                 if queue_item is None:
                     self.db.add(
                         AuctionRefreshQueue(
@@ -79,6 +99,7 @@ class AuctionSyncService:
             await self.db.scalars(
                 select(AuctionRefreshQueue)
                 .where(AuctionRefreshQueue.region == region)
+                .where(AuctionRefreshQueue.market_state != "retired")
                 .where(
                     (AuctionRefreshQueue.next_lots_refresh_at <= now)
                     | (AuctionRefreshQueue.next_history_refresh_at <= now)
@@ -86,32 +107,97 @@ class AuctionSyncService:
                 .order_by(AuctionRefreshQueue.priority.desc())
             )
         ).all()
-        requests_used = 0
-        changed_prices = False
-        for queue_item in queue_items:
-            if requests_used >= max_requests:
-                break
-            if queue_item.next_lots_refresh_at <= now:
-                _, lots = await self.client.get_lots(region, queue_item.item_id)
-                await self._store_lots(region, queue_item.item_id, lots, now)
-                queue_item.last_lots_refresh_at = now
-                queue_item.next_lots_refresh_at = now + self.lots_refresh
-                requests_used += 1
-                changed_prices = True
-            if requests_used >= max_requests:
-                continue
-            if queue_item.next_history_refresh_at <= now:
-                _, trades = await self.client.get_history(region, queue_item.item_id)
-                await self._store_trades(region, queue_item.item_id, trades, now)
-                await self._rebuild_candles(region, queue_item.item_id)
-                queue_item.last_history_refresh_at = now
-                queue_item.next_history_refresh_at = now + self.history_refresh
-                requests_used += 1
+        craft_queue = [item for item in queue_items if item.priority >= CRAFT_PRIORITY]
+        market_queue = [item for item in queue_items if item.priority < CRAFT_PRIORITY]
+        craft_budget = max_requests * 3 // 4
+        craft_used, changed_prices = await self._sync_queue_items(
+            region, craft_queue, craft_budget, now
+        )
+        market_used, market_prices_changed = await self._sync_queue_items(
+            region, market_queue, max_requests - craft_used, now
+        )
+        requests_used = craft_used + market_used
+        changed_prices = changed_prices or market_prices_changed
 
         if changed_prices:
             await self.recalculate_craft_profit(region, now)
         await self.db.commit()
         return requests_used
+
+    async def _sync_queue_items(
+        self,
+        region: str,
+        queue_items: list[AuctionRefreshQueue],
+        max_requests: int,
+        now: datetime,
+    ) -> tuple[int, bool]:
+        requests_used = 0
+        changed_prices = False
+        for queue_item in queue_items:
+            if requests_used >= max_requests:
+                break
+            lots_refresh, history_refresh = self._refresh_intervals(queue_item)
+            if queue_item.next_lots_refresh_at <= now:
+                try:
+                    _, lots = await self.client.get_lots(region, queue_item.item_id)
+                except AuctionApiError as exc:
+                    requests_used += 1
+                    self._retire_invalid_item(queue_item, exc, now)
+                    continue
+                changed_prices = (
+                    await self._store_lots(region, queue_item.item_id, lots, now) or changed_prices
+                )
+                queue_item.last_lots_was_empty = not lots
+                queue_item.last_lots_refresh_at = now
+                queue_item.next_lots_refresh_at = now + lots_refresh
+                requests_used += 1
+            if requests_used >= max_requests or queue_item.market_state == "retired":
+                continue
+            if queue_item.next_history_refresh_at <= now:
+                try:
+                    _, trades = await self.client.get_history(region, queue_item.item_id)
+                except AuctionApiError as exc:
+                    requests_used += 1
+                    self._retire_invalid_item(queue_item, exc, now)
+                    continue
+                await self._store_trades(region, queue_item.item_id, trades, now)
+                if trades:
+                    await self._rebuild_candles(region, queue_item.item_id)
+                self._update_market_state(queue_item, bool(trades), now)
+                queue_item.last_history_refresh_at = now
+                queue_item.next_history_refresh_at = now + history_refresh
+                requests_used += 1
+        return requests_used, changed_prices
+
+    def _refresh_intervals(
+        self, queue_item: AuctionRefreshQueue
+    ) -> tuple[timedelta, timedelta]:
+        if queue_item.priority >= CRAFT_PRIORITY:
+            return self.craft_lots_refresh, self.craft_history_refresh
+        return self.market_lots_refresh, self.market_history_refresh
+
+    def _update_market_state(
+        self, queue_item: AuctionRefreshQueue, has_history: bool, now: datetime
+    ) -> None:
+        if has_history or not queue_item.last_lots_was_empty:
+            queue_item.market_state = "active"
+            queue_item.empty_probe_count = 0
+            return
+        queue_item.empty_probe_count += 1
+        if queue_item.empty_probe_count >= self.empty_probe_limit:
+            queue_item.market_state = "retired"
+            queue_item.retired_at = now
+            queue_item.retired_reason = "no_market_activity"
+
+    @staticmethod
+    def _retire_invalid_item(
+        queue_item: AuctionRefreshQueue, error: AuctionApiError, now: datetime
+    ) -> None:
+        if error.status_code not in {400, 404}:
+            return
+        queue_item.market_state = "retired"
+        queue_item.retired_at = now
+        queue_item.retired_reason = "invalid_api_item"
 
     async def recalculate_craft_profit(
         self, region: str, calculated_at: datetime | None = None
@@ -145,7 +231,16 @@ class AuctionSyncService:
                 and (recipe.energy == 0 or energy_cost is not None)
             )
             total_cost = ingredient_cost + energy_cost if complete else None
-            profit = result_value - total_cost if complete and result_value is not None else None
+            net_result_value = (
+                result_value * (Decimal(1) - AUCTION_SELL_COMMISSION)
+                if result_value is not None
+                else None
+            )
+            profit = (
+                net_result_value - total_cost
+                if complete and net_result_value is not None
+                else None
+            )
             margin = (profit / total_cost * 100) if profit is not None and total_cost else None
             snapshot = CraftProfitSnapshot(
                 recipe_id=recipe.id,
@@ -165,7 +260,9 @@ class AuctionSyncService:
 
     async def _store_lots(
         self, region: str, item_id: str, lots: list[AuctionLot], observed_at: datetime
-    ) -> None:
+    ) -> bool:
+        if not lots:
+            return False
         buyouts = [per_unit_price(lot.buyout_price, lot.amount) for lot in lots if lot.buyout_price]
         bids = [per_unit_price(lot.current_price, lot.amount) for lot in lots if lot.current_price]
         await self.db.merge(
@@ -178,6 +275,7 @@ class AuctionSyncService:
                 observed_at=observed_at,
             )
         )
+        return True
 
     async def _store_trades(
         self, region: str, item_id: str, trades: list[AuctionTradeRecord], now: datetime

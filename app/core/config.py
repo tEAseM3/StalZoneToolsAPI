@@ -19,9 +19,15 @@ class Settings(BaseSettings):
     STALZONE_API_BASE_URL: str = "https://eapi.stalcraft.net"
     AUCTION_REGIONS: str = "EU"
     AUCTION_REQUESTS_PER_MINUTE: int = Field(default=180, gt=0, le=200)
-    AUCTION_LOTS_REFRESH_MINUTES: int = Field(default=10, gt=0)
-    AUCTION_HISTORY_REFRESH_HOURS: int = Field(default=6, gt=0)
+    CRAFT_LOTS_REFRESH_MINUTES: int = Field(default=30, gt=0)
+    CRAFT_HISTORY_REFRESH_HOURS: int = Field(default=12, gt=0)
+    MARKET_LOTS_REFRESH_MINUTES: int = Field(default=240, gt=0)
+    MARKET_HISTORY_REFRESH_HOURS: int = Field(default=48, gt=0)
+    AUCTION_EMPTY_PROBE_LIMIT: int = Field(default=5, gt=0, le=20)
     AUCTION_SYNC_INTERVAL_MINUTES: int = Field(default=1, gt=0)
+    TEST_AUTO_LOGIN: bool = False
+    TEST_ADMIN_USERNAME: str = Field(default="test123", min_length=3, max_length=55)
+    TEST_ADMIN_PASSWORD: str = Field(default="qwerty123", min_length=8, max_length=255)
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

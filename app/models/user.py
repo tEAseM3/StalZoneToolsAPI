@@ -7,9 +7,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.craft_record import CraftRecord
     from app.models.refresh_token import RefreshToken
     from app.models.user_role import UserRole
-    from app.models.user_trade_position import UserTradePosition
 
 
 class User(Base):
@@ -30,7 +30,7 @@ class User(Base):
     refresh_tokens: Mapped[list[RefreshToken]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
-    trade_positions: Mapped[list[UserTradePosition]] = relationship(
+    craft_records: Mapped[list[CraftRecord]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
 

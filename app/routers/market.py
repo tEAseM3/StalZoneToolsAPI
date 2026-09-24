@@ -1,123 +1,106 @@
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import require_permissions
 from app.db.database import get_db
 from app.models.user import User
-from app.schemas.portfolio import TradePositionCreate, TradeSaleCreate
-from app.services import market, portfolio
+from app.schemas.craft_records import CraftRecordCreate, CraftSaleCreate
+from app.services import craft_records, market
 
 router = APIRouter(tags=["Market"])
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 ItemMarketAccess = Annotated[object, Depends(require_permissions("items:read", "auction:read"))]
 CraftMarketAccess = Annotated[object, Depends(require_permissions("hideout:read", "auction:read"))]
-PortfolioReadAccess = Annotated[User, Depends(require_permissions("portfolio:read"))]
-PortfolioWriteAccess = Annotated[User, Depends(require_permissions("portfolio:write"))]
+TradingReadAccess = Annotated[User, Depends(require_permissions("trading:read"))]
+TradingWriteAccess = Annotated[User, Depends(require_permissions("trading:write"))]
 
 
 @router.get("/market/items")
 async def find_items(
     name: Annotated[str, Query(min_length=1, max_length=255)],
-    region: Literal["RU", "EU", "NA", "SEA", "NEA"],
     page: Annotated[int, Query(ge=1)] = 1,
     db: DbSession = None,
     _: ItemMarketAccess = None,
 ):
-    return await market.search_items(db, region, name, page)
+    return await market.search_items(db, name, page)
 
 
 @router.get("/market/items/top")
 async def get_top_buy_items(
-    region: Literal["EU"] = "EU",
+    sort: Literal["score", "price", "discount", "volume"] = "score",
+    order: Literal["asc", "desc"] = "desc",
     page: Annotated[int, Query(ge=1)] = 1,
     db: DbSession = None,
     _: ItemMarketAccess = None,
 ):
-    return await market.top_buy_items(db, region, page)
+    return await market.top_buy_items(db, sort, order, page)
 
 
-@router.get("/market/items/{item_id}")
-async def get_item_market(
-    item_id: str,
-    region: Literal["RU", "EU", "NA", "SEA", "NEA"],
-    interval: Literal["day", "week"] = "day",
+@router.get("/market/items/profitable")
+async def get_profitable_buy_items(
+    sort: Literal["profit", "margin", "price", "volume"] = "profit",
+    order: Literal["asc", "desc"] = "desc",
+    page: Annotated[int, Query(ge=1)] = 1,
     db: DbSession = None,
     _: ItemMarketAccess = None,
 ):
-    result = await market.item_market_details(db, region, item_id, interval)
-    if result is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
-    return result
-
-
-@router.get("/market/positions")
-async def get_trade_positions(
-    db: DbSession = None,
-    current_user: PortfolioReadAccess = None,
-):
-    return await portfolio.list_positions(db, current_user.id, "EU")
-
-
-@router.post("/market/positions", status_code=status.HTTP_201_CREATED)
-async def create_trade_position(
-    data: TradePositionCreate,
-    db: DbSession = None,
-    current_user: PortfolioWriteAccess = None,
-):
-    return await portfolio.create_position(db, current_user.id, "EU", data)
-
-
-@router.post("/market/positions/{position_id}/sales", status_code=status.HTTP_201_CREATED)
-async def record_trade_sale(
-    position_id: int,
-    data: TradeSaleCreate,
-    db: DbSession = None,
-    current_user: PortfolioWriteAccess = None,
-):
-    return await portfolio.add_sale(db, current_user.id, position_id, data)
+    return await market.profitable_buy_items(db, sort, order, page)
 
 
 @router.get("/hideout/crafts")
 async def find_crafts(
     name: Annotated[str, Query(min_length=1, max_length=255)],
-    region: Literal["RU", "EU", "NA", "SEA", "NEA"],
     page: Annotated[int, Query(ge=1)] = 1,
     db: DbSession = None,
     _: CraftMarketAccess = None,
 ):
-    return await market.search_crafts(db, region, name, page)
+    return await market.search_crafts(db, name, page)
 
 
 @router.get("/hideout/crafts/top")
 async def get_top_crafts(
-    region: Literal["RU", "EU", "NA", "SEA", "NEA"],
+    sort: Literal["profit", "margin", "cost", "price"] = "profit",
+    order: Literal["asc", "desc"] = "desc",
     page: Annotated[int, Query(ge=1)] = 1,
     db: DbSession = None,
     _: CraftMarketAccess = None,
 ):
-    return await market.top_crafts(db, region, page)
+    return await market.top_crafts(db, sort, order, page)
 
 
-@router.get("/hideout/crafts/{recipe_id}/chain")
-async def get_craft_chain(
-    recipe_id: int,
-    region: Literal["RU", "EU", "NA", "SEA", "NEA"],
+@router.get("/craft-records")
+async def get_craft_records(
     db: DbSession = None,
-    _: CraftMarketAccess = None,
+    current_user: TradingReadAccess = None,
 ):
-    result = await market.craft_chain(db, region, recipe_id)
-    if result is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipe not found")
-    return result
+    return await craft_records.list_records(db, current_user.id)
 
 
-@router.get("/hideout/crafts/reprocess")
-async def get_reprocess_options(
-    item_id: str,
-    region: Literal["RU", "EU", "NA", "SEA", "NEA"],
+@router.get("/craft-records/suggestions")
+async def get_craft_record_suggestions(
+    query: Annotated[str, Query(min_length=1, max_length=255)],
     db: DbSession = None,
-    _: CraftMarketAccess = None,
+    current_user: TradingReadAccess = None,
 ):
-    return {"item_id": item_id, "crafts": await market.reprocess_options(db, region, item_id)}
+    return {"items": await craft_records.suggestions(db, current_user.id, query)}
+
+
+@router.post("/craft-records")
+async def create_craft_record(
+    data: CraftRecordCreate,
+    db: DbSession = None,
+    current_user: TradingWriteAccess = None,
+):
+    return await craft_records.create_record(db, current_user.id, data)
+
+
+@router.post("/craft-records/{record_id}/sales")
+async def create_craft_sale(
+    record_id: int,
+    data: CraftSaleCreate,
+    db: DbSession = None,
+    current_user: TradingWriteAccess = None,
+):
+    return await craft_records.add_sale(db, current_user.id, record_id, data)
